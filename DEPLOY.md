@@ -63,6 +63,47 @@ git push -u origin main
 
 ---
 
+## 2b. Your Vercel team
+
+Your team (organisation) ID is:
+
+```
+team_UOID0ViyfsqkKhlCe9vSrHrZ
+```
+
+This is an **identifier, not a secret** — it is safe in config files and logs.
+Vercel calls it `VERCEL_ORG_ID` when deploying from a script or CI.
+
+You only need it for non-interactive deploys. Deploying through the Vercel
+dashboard (the path below) picks the team automatically.
+
+### Deploying from the terminal instead
+
+The Vercel CLI is installed as a dev dependency, so `npx vercel` works here.
+
+```bash
+npx vercel login          # opens a browser once
+npx vercel link --scope team_UOID0ViyfsqkKhlCe9vSrHrZ
+npx vercel env pull       # brings the project's env vars into .env.local
+npm run deploy            # vercel deploy --prod
+```
+
+Fully headless (CI, no browser) — create a token at
+<https://vercel.com/account/tokens>, then:
+
+```bash
+export VERCEL_TOKEN="<your-token>"
+export VERCEL_ORG_ID="team_UOID0ViyfsqkKhlCe9vSrHrZ"
+export VERCEL_PROJECT_ID="<from Project → Settings → General>"
+npx vercel deploy --prod --token "$VERCEL_TOKEN"
+```
+
+> A Vercel **token** *is* a secret — it can deploy and read env vars on your
+> behalf. Never commit it or paste it into a chat. If one leaks, revoke it at
+> <https://vercel.com/account/tokens>.
+
+---
+
 ## 3. Import into Vercel
 
 1. Go to <https://vercel.com/new> and import the repository.
@@ -103,8 +144,21 @@ letting real people register.
 
 ## 5. Deploy
 
-Click **Deploy**. The build runs `npm run vercel-build`, which generates the
-Prisma client, pushes the schema to Neon, and builds Next.js.
+Click **Deploy**. The build runs `npm run vercel-build`, which:
+
+1. **Preflight-checks the environment** — if `DATABASE_URL`, `DIRECT_URL` or
+   `AUTH_SECRET` is missing or malformed, the build stops immediately with a
+   message naming the variable, rather than failing later inside Prisma. It also
+   refuses to build production with `APP_DEV_SHOW_OTP` enabled.
+2. Generates the Prisma client
+3. Pushes the schema to Neon
+4. Builds Next.js
+
+You can run the same check locally at any time:
+
+```bash
+npm run preflight
+```
 
 ---
 
