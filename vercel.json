@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run vercel-build",
+  "framework": "nextjs",
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/cron/sla-check",
+      "schedule": "0 * * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/tickets/route.ts": { "maxDuration": 60 },
+    "src/app/api/tickets/[id]/suggest/route.ts": { "maxDuration": 60 },
+    "src/app/api/kb/route.ts": { "maxDuration": 60 },
+    "src/app/api/kb/[id]/route.ts": { "maxDuration": 60 },
+    "src/app/api/cron/sla-check/route.ts": { "maxDuration": 60 }
+  }
+}

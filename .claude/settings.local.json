@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(docker --version)",
+      "Bash(mkdir -p uploads public src/app src/components src/lib)",
+      "Bash(touch uploads/.gitkeep)",
+      "Bash(npm install *)"
+    ]
+  }
+}

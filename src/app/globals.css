@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * IronCore Fitness.
+   *
+   * The brand is dark-first — a gym floor at 6am, not an office suite — with an
+   * amber accent that carries the energy. The light theme is still fully
+   * specified rather than an afterthought, because the front desk runs on an
+   * iPad in daylight.
+   *
+   * Amber is deliberately NOT reused for data-series colour: the chart palette
+   * in `components/charts/palette.ts` stays brand-neutral and validated, so a
+   * bar never reads as "brand-coloured, therefore important".
+   */
+  :root {
+    --bg: 250 250 249;
+    --surface: 255 255 255;
+    --surface-2: 245 245 244;
+    --line: 231 229 228;
+    --ink: 28 25 23;
+    --muted: 120 113 108;
+
+    --brand-50: 255 251 235;
+    --brand-100: 254 243 199;
+    --brand-500: 245 158 11;
+    --brand-600: 217 119 6;
+    --brand-700: 180 83 9;
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .dark {
+    --bg: 12 10 9;
+    --surface: 28 25 23;
+    --surface-2: 41 37 36;
+    --line: 68 64 60;
+    --ink: 250 250 249;
+    --muted: 168 162 158;
+
+    /* Amber steps re-picked for the dark surface, not an automatic inversion. */
+    --brand-50: 52 34 8;
+    --brand-100: 69 45 10;
+    --brand-500: 251 191 36;
+    --brand-600: 245 158 11;
+    --brand-700: 252 211 77;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    font-family: var(--font-sans);
+  }
+
+  ::selection {
+    @apply bg-brand-500/25;
+  }
+
+  /* Focus ring that works on both themes */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    @apply outline-none ring-2 ring-brand-500/70 ring-offset-2 ring-offset-bg;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /*
+   * Grid and flex items default to `min-width: auto`, which refuses to shrink
+   * below the item's min-content width. One long ticket subject inside a card is
+   * then enough to push an entire dashboard wider than a phone screen — the page
+   * scrolls sideways and every column inherits the wrong width.
+   *
+   * Defaulting direct children of a grid to `min-width: 0` makes them shrink as
+   * intended. Anything that genuinely needs to stay wide (data tables, code
+   * blocks) opts out by scrolling inside its own `overflow-x-auto` wrapper.
+   */
+  .grid > * {
+    min-width: 0;
+  }
+}
+
+@layer components {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-line;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-surface-2;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--surface) / 0.6),
+      transparent
+    );
+  }
+}
+
+/* Recharts inherits colours from CSS variables so charts follow the theme. */
+.recharts-cartesian-axis-tick text {
+  fill: rgb(var(--muted));
+  font-size: 12px;
+}
+.recharts-cartesian-grid line {
+  stroke: rgb(var(--line));
+}
+.recharts-tooltip-wrapper {
+  outline: none;
+}

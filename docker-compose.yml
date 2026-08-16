@@ -1,0 +1,56 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: support-desk-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: support
+      POSTGRES_PASSWORD: support
+      POSTGRES_DB: support_desk
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./prisma/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U support -d support_desk']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Optional: run the whole app in Docker with `docker compose --profile app up`.
+  app:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support-desk-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://support:support@db:5432/support_desk?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:-docker-dev-secret-change-me-please-32chars}
+      AUTH_SESSION_DAYS: ${AUTH_SESSION_DAYS:-7}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL:-no-reply@support-desk.local}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-Support Desk}
+      APP_DEV_SHOW_OTP: ${APP_DEV_SHOW_OTP:-true}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_ALERT_CHANNEL: ${SLACK_ALERT_CHANNEL:-#support-alerts}
+      CRON_SECRET: ${CRON_SECRET:-local-dev-cron-secret}
+      UPLOAD_DIR: /app/uploads
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+    ports:
+      - '3000:3000'
+    volumes:
+      - uploads:/app/uploads
+
+volumes:
+  db-data:
+  uploads:

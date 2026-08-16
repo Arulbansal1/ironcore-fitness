@@ -1,0 +1,563 @@
+// IronCore Fitness — Member Support Desk with AI Triage
+// PostgreSQL + pgvector. Run `npm run db:push` then `npm run db:seed`.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  // Pooled connection. On serverless (Vercel) every request may be a new
+  // lambda, so a pooled URL is required or Postgres runs out of connections.
+  url        = env("DATABASE_URL")
+  // Unpooled connection used only by `prisma db push` / migrations, which
+  // cannot run through a transaction pooler. Falls back to DATABASE_URL locally.
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  MEMBER
+  STAFF
+  ADMIN
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING_MEMBER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+/// Support topics a gym member actually contacts the front desk about.
+enum TicketCategory {
+  MEMBERSHIP        // joining, freezing, cancelling, billing, invoices
+  EQUIPMENT         // broken machines, facilities, cleanliness, lockers
+  CLASSES           // class bookings, waitlists, timetable changes
+  PERSONAL_TRAINING // PT sessions, trainer allocation, packages
+  NUTRITION         // diet plans, body composition, supplements
+  INJURY            // injuries, medical clearance, physio referral
+  ACCOUNT           // login, app access, key fob, personal details
+  COMPLAINT         // staff conduct, member behaviour, general complaints
+  GENERAL           // opening hours, guest passes, anything else
+}
+
+enum Sentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+  FRUSTRATED
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum MessageAuthorType {
+  MEMBER
+  STAFF
+  SYSTEM
+  AI
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  EDITED
+  REJECTED
+}
+
+enum EscalationStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum EscalationReason {
+  FIRST_RESPONSE_BREACH
+  RESOLUTION_BREACH
+  NEGATIVE_SENTIMENT
+  SAFETY_RISK
+  MANUAL
+  REOPENED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum AiEngine {
+  OPENAI
+  LOCAL_FALLBACK
+}
+
+// --- gym-specific -----------------------------------------------------------
+
+enum MembershipTier {
+  DAY_PASS
+  BASIC
+  PRO
+  ELITE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  FROZEN
+  EXPIRED
+  CANCELLED
+  PENDING
+}
+
+enum BookingStatus {
+  BOOKED
+  WAITLISTED
+  ATTENDED
+  NO_SHOW
+  CANCELLED
+}
+
+enum CheckInSource {
+  TURNSTILE
+  FRONT_DESK
+  APP
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  role          Role      @default(MEMBER)
+  emailVerified Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  phone         String?
+  avatarColor   String    @default("#f59e0b")
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  staffProfile     StaffProfile?
+  memberProfile    MemberProfile?
+  otpCodes         OtpCode[]
+  ticketsAsMember  Ticket[]       @relation("TicketMember")
+  ticketsAsOwner   Ticket[]       @relation("TicketAssignee")
+  messages         Message[]
+  attachments      Attachment[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
+  reviewedDrafts   AiSuggestion[] @relation("SuggestionReviewer")
+  ticketEvents     TicketEvent[]
+  kbArticles       KbArticle[]
+  payments         Payment[]
+  escalations      Escalation[]   @relation("EscalationAcknowledger")
+  classesTaught    GymClass[]     @relation("ClassTrainer")
+  bookings         ClassBooking[]
+  checkIns         CheckIn[]
+
+  @@index([role])
+  @@index([email])
+}
+
+/// Front-desk staff, floor staff and personal trainers.
+model StaffProfile {
+  id             String           @id @default(cuid())
+  userId         String           @unique
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String           @default("Front Desk")
+  specialties    TicketCategory[] @default([])
+  /// Trainers can be assigned to classes and personal-training tickets.
+  isTrainer      Boolean          @default(false)
+  certifications String[]         @default([])
+  maxOpenTickets Int              @default(15)
+  isAvailable    Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+/// A gym member's contract and profile. Drives the context panel staff see on
+/// every ticket, and the member's own membership screen.
+model MemberProfile {
+  id           String           @id @default(cuid())
+  userId       String           @unique
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberNumber String           @unique
+  tier         MembershipTier   @default(BASIC)
+  status       MembershipStatus @default(ACTIVE)
+  joinedAt     DateTime         @default(now())
+  expiresAt    DateTime?
+  /// Set while a membership is frozen (injury, travel, etc).
+  frozenUntil  DateTime?
+  freezeReason String?
+  homeBranch   String           @default("IronCore Central")
+  dateOfBirth  DateTime?
+  goals        String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  /// Visible to staff only — surfaced on injury and PT tickets.
+  medicalNotes String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([status])
+  @@index([tier])
+}
+
+model OtpCode {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    OtpPurpose
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Classes, bookings and attendance
+// ---------------------------------------------------------------------------
+
+model GymClass {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  trainerId   String?
+  trainer     User?    @relation("ClassTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
+  /// 0 = Sunday … 6 = Saturday.
+  dayOfWeek   Int
+  startTime   String   // "18:00", stored as local gym time
+  durationMins Int     @default(45)
+  capacity    Int      @default(20)
+  room        String   @default("Studio 1")
+  intensity   String   @default("Moderate")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bookings ClassBooking[]
+
+  @@index([dayOfWeek, startTime])
+  @@index([isActive])
+}
+
+model ClassBooking {
+  id          String        @id @default(cuid())
+  memberId    String
+  member      User          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  classId     String
+  gymClass    GymClass      @relation(fields: [classId], references: [id], onDelete: Cascade)
+  /// The specific calendar date of this occurrence of a recurring class.
+  sessionDate DateTime
+  status      BookingStatus @default(BOOKED)
+  bookedAt    DateTime      @default(now())
+  cancelledAt DateTime?
+
+  @@unique([memberId, classId, sessionDate])
+  @@index([classId, sessionDate])
+  @@index([memberId, sessionDate])
+}
+
+model CheckIn {
+  id       String        @id @default(cuid())
+  memberId String
+  member   User          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  at       DateTime      @default(now())
+  source   CheckInSource @default(TURNSTILE)
+
+  @@index([memberId, at])
+}
+
+// ---------------------------------------------------------------------------
+// Tickets
+// ---------------------------------------------------------------------------
+
+model Ticket {
+  id      String @id @default(cuid())
+  number  Int    @unique @default(autoincrement())
+  subject String
+  body    String
+
+  status   TicketStatus   @default(OPEN)
+  priority TicketPriority @default(MEDIUM)
+  category TicketCategory @default(GENERAL)
+
+  memberId   String
+  member     User    @relation("TicketMember", fields: [memberId], references: [id], onDelete: Cascade)
+  assigneeId String?
+  assignee   User?   @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  // --- AI triage output ---
+  aiSummary    String?
+  aiSentiment  Sentiment?
+  aiConfidence Float?
+  aiTags       String[]   @default([])
+  aiEngine     AiEngine?
+  aiTriagedAt  DateTime?
+  autoAssigned Boolean    @default(false)
+  /// Set by triage when a ticket describes an injury or a safety hazard.
+  safetyFlag   Boolean    @default(false)
+
+  // --- SLA ---
+  slaPolicyId           String?
+  slaPolicy             SlaPolicy? @relation(fields: [slaPolicyId], references: [id], onDelete: SetNull)
+  firstResponseDue      DateTime?
+  resolutionDue         DateTime?
+  firstRespondedAt      DateTime?
+  resolvedAt            DateTime?
+  closedAt              DateTime?
+  firstResponseBreached Boolean    @default(false)
+  resolutionBreached    Boolean    @default(false)
+  reopenCount           Int        @default(0)
+  satisfaction          Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages    Message[]
+  attachments Attachment[]
+  suggestions AiSuggestion[]
+  escalations Escalation[]
+  events      TicketEvent[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([memberId])
+  @@index([assigneeId])
+  @@index([createdAt])
+  @@index([category])
+}
+
+model Message {
+  id            String            @id @default(cuid())
+  ticketId      String
+  ticket        Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId      String?
+  author        User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  authorType    MessageAuthorType
+  body          String
+  isInternal    Boolean           @default(false)
+  fromAiDraftId String?
+  createdAt     DateTime          @default(now())
+
+  attachments Attachment[]
+
+  @@index([ticketId, createdAt])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  messageId  String?
+  message    Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  uploaderId String?
+  uploader   User?    @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+  filename   String
+  /// Filename on disk when using local storage; empty when stored in the database.
+  storedName String
+  mimeType   String
+  sizeBytes  Int
+  /// File contents, used when running somewhere with no persistent disk
+  /// (Vercel and most serverless hosts). Null when the file lives on disk.
+  data       Bytes?
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+model TicketEvent {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  type      String
+  summary   String
+  fromValue String?
+  toValue   String?
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// AI: suggestions + knowledge base (RAG)
+// ---------------------------------------------------------------------------
+
+model AiSuggestion {
+  id           String           @id @default(cuid())
+  ticketId     String
+  ticket       Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  draft        String
+  finalText    String?
+  confidence   Float
+  engine       AiEngine
+  model        String
+  status       SuggestionStatus @default(PENDING)
+  citations    Json             @default("[]")
+  reviewedById String?
+  reviewedBy   User?            @relation("SuggestionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  latencyMs    Int?
+  createdAt    DateTime         @default(now())
+
+  @@index([ticketId, createdAt])
+  @@index([status])
+}
+
+model KbArticle {
+  id          String         @id @default(cuid())
+  title       String
+  slug        String         @unique
+  summary     String
+  content     String
+  category    TicketCategory @default(GENERAL)
+  tags        String[]       @default([])
+  isPublished Boolean        @default(true)
+  views       Int            @default(0)
+  authorId    String?
+  author      User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  chunks KbChunk[]
+
+  @@index([category])
+  @@index([isPublished])
+}
+
+/// Vector store for retrieval-augmented generation.
+/// `embedding` is a pgvector column — Prisma Client cannot read/write it
+/// directly, so it is managed with raw SQL in `src/lib/rag.ts`.
+model KbChunk {
+  id         String                       @id @default(cuid())
+  articleId  String
+  article    KbArticle                    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  chunkIndex Int
+  content    String
+  embedding  Unsupported("vector(1536)")?
+  createdAt  DateTime                     @default(now())
+
+  @@unique([articleId, chunkIndex])
+  @@index([articleId])
+}
+
+// ---------------------------------------------------------------------------
+// SLA, escalation, audit
+// ---------------------------------------------------------------------------
+
+model SlaPolicy {
+  id                String         @id @default(cuid())
+  name              String
+  priority          TicketPriority @unique
+  firstResponseMins Int
+  resolutionMins    Int
+  escalateAfterMins Int            @default(30)
+  notifySlack       Boolean        @default(true)
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  tickets Ticket[]
+}
+
+model Escalation {
+  id               String           @id @default(cuid())
+  ticketId         String
+  ticket           Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  reason           EscalationReason
+  level            Int              @default(1)
+  status           EscalationStatus @default(OPEN)
+  detail           String
+  slackNotified    Boolean          @default(false)
+  slackError       String?
+  acknowledgedById String?
+  acknowledgedBy   User?            @relation("EscalationAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  acknowledgedAt   DateTime?
+  resolvedAt       DateTime?
+  createdAt        DateTime         @default(now())
+
+  @@unique([ticketId, reason, level])
+  @@index([ticketId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String?
+  detail     String?
+  metadata   Json     @default("{}")
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  link      String?
+  level     String    @default("info")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+// ---------------------------------------------------------------------------
+// DEMO PAYMENT — simulated gateway, never touches real money.
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan        String
+  amountCents Int
+  currency    String        @default("USD")
+  status      PaymentStatus @default(PENDING)
+  reference   String        @unique
+  cardLast4   String
+  cardBrand   String
+  failureCode String?
+  /// Always true. This gateway is a simulation for the showcase build.
+  isDemo      Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+
+  @@index([userId, createdAt])
+}
