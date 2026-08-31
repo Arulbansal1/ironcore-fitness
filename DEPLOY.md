@@ -45,21 +45,27 @@ high-traffic deployment should move to object storage (Vercel Blob or S3).
 
 ## 2. Push the code to GitHub
 
+The repository is already initialised, committed, and pointed at
+`https://github.com/Arulbansal1/ironcore-fitness`. You just need to authenticate
+once and push:
+
 ```bash
-git init                      # already done if you cloned
-git add -A
-git commit -m "IronCore Fitness member support desk"
+gh auth login          # choose GitHub.com → HTTPS → login with a browser
 gh repo create ironcore-fitness --private --source=. --push
 ```
 
-No `gh` CLI? Create an empty repo on github.com, then:
+`gh repo create` makes the repo and pushes in one step. If you would rather
+create it on github.com by hand first, then just:
 
 ```bash
-git remote add origin https://github.com/<you>/ironcore-fitness.git
 git push -u origin main
 ```
 
-`.env` is gitignored, so no secrets are committed.
+Use `--public` instead of `--private` if you want it visible — it is a portfolio
+project, so public is a reasonable choice.
+
+**Nothing sensitive is committed.** `.env`, `uploads/` and `.vercel/` are all
+gitignored; only `.env.example` ships, and it contains placeholders.
 
 ---
 
