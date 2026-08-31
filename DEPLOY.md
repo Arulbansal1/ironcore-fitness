@@ -125,7 +125,7 @@ In **Project → Settings → Environment Variables**, add these for
 | `CRON_SECRET` | Run `openssl rand -hex 32` and paste the result | **Yes** — Vercel Cron uses it |
 | `NEXT_PUBLIC_APP_URL` | `https://your-project.vercel.app` | Recommended |
 | `APP_DEV_SHOW_OTP` | `false` | **Yes in production** |
-| `SEED_ADMIN_EMAILS` | Your admin email (comma separated for several) | Optional |
+| `SEED_ADMIN_EMAILS` | Admin accounts, comma separated. Accepts `Name <email>` or a bare address. Defaults to `Arul Bansal <arulbansal1@gmail.com>,Priyanshu <priyanshura400na@gmail.com>` | Optional |
 | `SEED_ADMIN_PASSWORD` | A strong password for your admin account | Recommended |
 | `BREVO_API_KEY` | Brevo key, for real OTP emails | Optional |
 | `BREVO_SENDER_EMAIL` | A sender address verified in Brevo | Optional |

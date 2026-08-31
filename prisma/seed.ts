@@ -173,18 +173,37 @@ async function main() {
   // Real owner accounts, created before the demo data so the gym always has a
   // usable admin login on a fresh deployment. Override with SEED_ADMIN_EMAILS
   // (comma separated) and SEED_ADMIN_PASSWORD.
-  const ownerEmails = (process.env.SEED_ADMIN_EMAILS ?? 'priyanshura400na@gmail.com')
+  // Accepts "Name <email>" or a bare email, comma separated.
+  const ownerSpecs = (
+    process.env.SEED_ADMIN_EMAILS ??
+    'Arul Bansal <arulbansal1@gmail.com>,Priyanshu <priyanshura400na@gmail.com>'
+  )
     .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const match = entry.match(/^(.*?)\s*<(.+)>$/);
+      const email = (match ? match[2] : entry).trim().toLowerCase();
+      // Fall back to a readable name derived from the address.
+      const fallbackName = email
+        .split('@')[0]
+        .replace(/[0-9]+$/, '')
+        .split(/[._-]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+      return { email, name: (match?.[1] || fallbackName || 'Administrator').trim() };
+    });
+
+  const ownerEmails = ownerSpecs.map((o) => o.email);
 
   const ownerPasswordHash = process.env.SEED_ADMIN_PASSWORD
     ? await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD, 11)
     : passwordHash;
 
-  for (const email of ownerEmails) {
-    const owner = await prisma.user.upsert({
-      where: { email },
+  for (const owner of ownerSpecs) {
+    const created = await prisma.user.upsert({
+      where: { email: owner.email },
       // The password is reset on every seed. These are the owner's own accounts:
       // if re-seeding left a stale hash in place, the only admin login could be
       // locked out with no way back in short of editing the database by hand.
@@ -195,15 +214,15 @@ async function main() {
         passwordHash: ownerPasswordHash,
       },
       create: {
-        email,
-        name: 'Priyanshu',
+        email: owner.email,
+        name: owner.name,
         passwordHash: ownerPasswordHash,
         role: 'ADMIN',
         emailVerified: true,
-        avatarColor: colorFor(email),
+        avatarColor: colorFor(owner.email),
       },
     });
-    console.log(`  ✓ owner      ${owner.email}  (ADMIN)`);
+    console.log(`  ✓ owner      ${created.email}  (ADMIN — ${created.name})`);
   }
 
   const admin = await prisma.user.upsert({
