@@ -20,7 +20,7 @@
     "kb:reindex": "tsx --env-file-if-exists=.env scripts/reindex-kb.ts",
     "smoke": "tsx --env-file-if-exists=.env scripts/smoke-test.ts",
     "postinstall": "prisma generate",
-    "vercel-build": "tsx scripts/preflight.ts && prisma generate && prisma db push --skip-generate --accept-data-loss && next build",
+    "vercel-build": "tsx scripts/preflight.ts && prisma generate && prisma db push --skip-generate && next build",
     "preflight": "tsx --env-file-if-exists=.env scripts/preflight.ts",
     "deploy": "vercel deploy --prod"
   },
